@@ -100,20 +100,62 @@ class GraphEvo(object):
     """
     def mc_step_edge(self, alpha):
         i = np.random.choice(self.N)
-        # if this node has neighbors
-        if self.d_nbhd[i].shape[0] > 0:
-            new_strat = np.random.uniform(0.0, 1.0, 2)
-            # nb_strats = self.strategies[self.d_nbhd[i]]
-            # new_strat = np.array([np.mean(nb_strats[:, 0]),
-            #                       np.mean(nb_strats[:, 1])])
+        # proposed new strategy
+        new_strat = np.random.uniform(0.0, 1.0, 2)
+        # if the node has no neighbors, just accept the change
+        if self.d_nbhd[i].shape[0] == 0:
+            self.strategies[i] = new_strat
+        # otherwise, check if change increases payoff
+        else:
             # calculate payoffs against neighbors
-            prev_mean, new_mean = self.calc_payoffs(new_strat, self.strategies[i],
+            prev_payoffs, new_payoffs = self.calc_payoffs(new_strat, self.strategies[i],
                                                     self.strategies, self.d_nbhd[i],
                                                     self.payoffs)
-            if np.mean(new_mean) > np.mean(prev_mean):
+            mean_new, mean_prev = np.mean(new_payoffs), np.mean(prev_payoffs)
+            if mean_new > mean_prev:
                 self.strategies[i] = new_strat
-            #try changing edge dist by connecting to neighbors if there are some
-            if len(self.d_nbhd[i]) < self.N - 1 and np.random.rand() < alpha:
+                chosen_payoff = mean_new
+            else:
+                chosen_payoff = mean_prev
+
+        # Now consider adding an edge to i (maybe at random) and dropping one
+        if np.random.rand() < alpha:
+            # First case is no neighbors
+            if self.d_nbhd[i].shape[0] == 0:
+                j = np.random.choice(np.delete(np.arange(self.N), i))
+                self.G[i, j] = 1.
+                self.G[j, i] = 1.
+                self.d_nbhd[i] = np.where(self.G[i] != 0.)[0]
+                self.d_nbhd[j] = np.where(self.G[j] != 0.)[0]
+                edges = np.where(self.G != 0)
+                edge = np.random.choice(len(edges[0]))
+                k, l = edges[0][edge], edges[1][edge]
+                self.G[k, l] = 0.
+                self.G[l, k] = 0.
+                self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
+            # second case is fully connected, just add one elsewhere
+            elif self.d_nbhd[i].shape[0] == self.N - 1:
+                edges = np.where(self.G == 0)
+                # make sure is valid edge
+                while True:
+                    edge = np.random.choice(len(edges[0]))
+                    k, l = edges[0][edge], edges[1][edge]
+                    if k != l:
+                        break
+                self.G[k, l] = 1.
+                self.G[l, k] = 1.
+                self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
+                edges = np.where(self.G != 0)
+                edge = np.random.choice(len(edges[0]))
+                k, l = edges[0][edge], edges[1][edge]
+                self.G[k, l] = 0.
+                self.G[l, k] = 0.
+                self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
+            # final case is when we actually just add an edge
+            else:
                 non_nbs = np.arange(self.N)
                 non_nbs = np.delete(non_nbs, [i])
                 for z in self.d_nbhd[i]:
@@ -123,34 +165,85 @@ class GraphEvo(object):
                 new_stat = self.stationary(self.strategies[i], self.strategies[j])
                 # print('got here')
                 new_payoff = np.dot(self.payoffs, new_stat)
-                if new_payoff > np.min(new_mean):
-                    ind = np.argmin(new_mean)
-                    k = self.d_nbhd[i][ind]
-                    self.G[i, k] = 0.
-                    self.G[k, i] = 0.
+                if new_payoff > chosen_payoff:
                     self.G[i, j] = 1.
                     self.G[j, i] = 1.
                     self.d_nbhd[i] = np.where(self.G[i] != 0.)[0]
-                    self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
                     self.d_nbhd[j] = np.where(self.G[j] != 0.)[0]
-        # # if no neighbors
-        elif np.random.rand() < alpha:
-            j = np.random.choice(np.delete(np.arange(self.N), i))
-            edges = np.where(self.G != 0)
-            edge = np.random.choice(len(edges[0]))
-            k, l = edges[0][edge], edges[1][edge]
-            self.G[i, j] = 1.
-            self.G[j, i] = 1.
-            self.G[k, l] = 0.
-            self.G[l, k] = 0.
-            self.d_nbhd[i] = np.where(self.G[i] != 0.)[0]
-            self.d_nbhd[j] = np.where(self.G[j] != 0.)[0]
-            self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
-            self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
+                    edges = np.where(self.G != 0)
+                    edge = np.random.choice(len(edges[0]))
+                    k, l = edges[0][edge], edges[1][edge]
+                    self.G[k, l] = 0.
+                    self.G[l, k] = 0.
+                    self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                    self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
 
-    def run_mc_edge(self, alpha, N):
-        for _ in range(N):
-            self.mc_step_edge(alpha)
+
+    """
+    Monte Carlo step that also might change edges
+
+    """
+    def mc_step_edge_nn(self, alpha):
+        i = np.random.choice(self.N)
+        # proposed new strategy
+        new_strat = np.random.uniform(0.0, 1.0, 2)
+        # if the node has no neighbors, just accept the change
+        if self.d_nbhd[i].shape[0] == 0:
+            self.strategies[i] = new_strat
+        # otherwise, check if change increases payoff
+        else:
+            # calculate payoffs against neighbors
+            prev_payoffs, new_payoffs = self.calc_payoffs(new_strat, self.strategies[i],
+                                                    self.strategies, self.d_nbhd[i],
+                                                    self.payoffs)
+            mean_new, mean_prev = np.mean(new_payoffs), np.mean(prev_payoffs)
+            if mean_new > mean_prev:
+                self.strategies[i] = new_strat
+                chosen_payoff = mean_new
+            else:
+                chosen_payoff = mean_prev
+
+        # Now consider adding an edge
+        if np.random.rand() < alpha and self.d_nbhd[i].shape[0] != self.N - 1:
+            # first get next-nearest neighbors
+            nns = set(self.d_nbhd[i])
+            if np.random.rand() < 0.5:
+                nbs = set(self.d_nbhd[self.d_nbhd[i][0]])
+                for j in self.d_nbhd[i][1:]:
+                    nbs.update(set(self.d_nbhd[j]))
+                nnns1 = nbs.difference(nns)
+                nnns1.remove(i)
+                nnns = np.array(list(nnns1))
+                if nnns.shape[0] > 0:
+                    j = np.random.choice(nnns)
+                    self.G[i, j] = 1.
+                    self.G[j, i] = 1.
+                    self.d_nbhd[i] = np.where(self.G[i] != 0.)[0]
+                    self.d_nbhd[j] = np.where(self.G[j] != 0.)[0]
+                    edges = np.where(self.G != 0)
+                    edge = np.random.choice(len(edges[0]))
+                    k, l = edges[0][edge], edges[1][edge]
+                    self.G[k, l] = 0.
+                    self.G[l, k] = 0.
+                    self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                    self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
+            else:
+                not_nns1 = set(np.arange(self.N)).difference(nns)
+                if i in not_nns1:
+                    not_nns1.remove(i)
+                not_nns = np.array(list(not_nns1))
+                j = np.random.choice(not_nns)
+                self.G[i, j] = 1.
+                self.G[j, i] = 1.
+                self.d_nbhd[i] = np.where(self.G[i] != 0.)[0]
+                self.d_nbhd[j] = np.where(self.G[j] != 0.)[0]
+                edges = np.where(self.G != 0)
+                edge = np.random.choice(len(edges[0]))
+                k, l = edges[0][edge], edges[1][edge]
+                self.G[k, l] = 0.
+                self.G[l, k] = 0.
+                self.d_nbhd[k] = np.where(self.G[k] != 0.)[0]
+                self.d_nbhd[l] = np.where(self.G[l] != 0.)[0]
 
 
 
