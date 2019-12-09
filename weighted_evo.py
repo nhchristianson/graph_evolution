@@ -9,7 +9,6 @@ from numba.typed import Dict
 
 @njit()
 def erdos_renyi(N, p):
-    np.random.seed(1000)
     G = np.zeros((N, N), dtype=float64)
     for i in np.arange(N):
         for j in np.arange(i+1, N):
@@ -30,18 +29,17 @@ def within_eps(x, y, eps=1e-8):
 
 @njit(parallel=True)
 def parallel_mc(N, p, payoffs, alpha, incr, n_steps, n_parallel):
-    dev_Gs = np.zeros((n_parallel, 11, N, N))
+    dev_Gs = np.zeros((n_parallel, 2, N, N))
     strategies = np.zeros((n_parallel, 100, N, 2))
     for p_copy in nb.prange(n_parallel):
         x = GraphEvo(N, p, payoffs)
         dev_Gs[p_copy, 0] = x.G
-        for i in np.arange(10):
-            for j in np.arange(10):
-                for k in np.arange(n_steps/100):
-                    x.mc_step_incr_edge(alpha, incr)
-                strategies[p_copy, 10*i+j] = x.strategies
-            dev_Gs[p_copy, i+1] = x.G
-        print('copy done')
+        for i in np.arange(100):
+            for k in np.arange(n_steps/100):
+                x.mc_step_incr_edge(alpha, incr)
+            strategies[p_copy, i] = x.strategies
+        dev_Gs[p_copy, 1] = x.G
+        # print('copy done')
     return dev_Gs, strategies
 
 spec = [
@@ -259,7 +257,7 @@ class GraphEvo(object):
         elif self.d_nbhd[i].shape[0] != 0:
             l = np.random.choice(self.d_nbhd[i].shape[0])
             k = self.d_nbhd[i][l]
-            incr = increment if choice == 1 else -increment
+            incr = increment if choice == 2 else -increment
             prop_weights = self.d_weights[i].copy()
             prop_weights[l] += incr
             prop_sum = np.sum(prop_weights)
